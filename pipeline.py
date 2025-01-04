@@ -2,10 +2,11 @@ from abc import ABC, abstractmethod
 import json
 
 class Pipeline(ABC):
-    def __init__(self, model, output_file, answer_file):
+    def __init__(self, model, output_file, answer_file, batch_size=1):
         self.model = model
         self.output_file = output_file
         self.answer_file = answer_file
+        self.batch_size = batch_size
 
     @abstractmethod
     def method(self, data, image_path):
@@ -18,12 +19,12 @@ class Pipeline(ABC):
 
 
 class DirectPipeline(Pipeline):
-    def __init__(self, model, output_file, answer_file):
-        super().__init__(model, output_file, answer_file)
+    def __init__(self, model, output_file, answer_file, batch_size=1):
+        super().__init__(model, output_file, answer_file, batch_size)
         
     def method(self, data):
-        initial_prompts = self.model.provide_initial_prompts(data, direct=True)
-        for i, (prompt, images, true_answer) in enumerate(initial_prompts):
+        initial_prompts = self.model.provide_initial_prompts(data, batch_size=self.batch_size, direct=True)
+        for i, (prompt, images, true_answers) in enumerate(initial_prompts):
             print(f"Running batch {i + 1}")
 
             # Generating CoT responses from initial prompts
@@ -32,44 +33,46 @@ class DirectPipeline(Pipeline):
 
             for output in outputs:
                 self.output_file.write(f"<ENTRY START>\n{output}\n\n")
-            self.answer_file.write(f"{true_answer}\n")
+            for answer in true_answers:
+                self.answer_file.write(f"{answer}\n")
 
 
 class ZeroShotPipeline(Pipeline):
-    def __init__(self, model, output_file, answer_file):
-        super().__init__(model, output_file, answer_file)
+    def __init__(self, model, output_file, answer_file, batch_size=1):
+        super().__init__(model, output_file, answer_file, batch_size)
         
     def method(self, data):
-        initial_prompts = self.model.provide_initial_prompts(data)
-        for i, (prompt, images, true_answer) in enumerate(initial_prompts):
+        initial_prompts = self.model.provide_initial_prompts(data, batch_size=self.batch_size)
+        for i, (prompt, images, true_answers) in enumerate(initial_prompts):
             print(f"Running batch {i + 1}")
 
             # Generating CoT responses from initial prompts
             print('Running model for CoT step')
             outputs = self.model.run_model(prompt, images)
                 
-            # Generating final prompts
+            # Creating final prompts
             print("Generating final prompts from CoT outputs")
-            final_prompt = self.model.generate_final_prompt(outputs[0])
+            final_prompts = self.model.generate_final_prompts(outputs)
 
-            
+            # Generating final answers from prompts
             print("Running model for final answers")
-            outputs = self.model.run_model(final_prompt, images)
+            outputs = self.model.run_model(final_prompts, images)
 
             for output in outputs:
                 self.output_file.write(f"<ENTRY START>\n{output}\n\n")
-            self.answer_file.write(f"{true_answer}\n")
+            for answer in true_answers:
+                self.answer_file.write(f"{answer}\n")
 
 
 class FewShotPipeline(Pipeline):
-    def __init__(self, model, output_file, answer_file, k=1):
-        super().__init__(model, output_file, answer_file)
+    def __init__(self, model, output_file, answer_file, batch_size=1, k=1):
+        super().__init__(model, output_file, answer_file, batch_size)
         self.k = k
-        self.model.examples = self.model.examples[:max(k, len(self.model.examples))]
+        self.model.examples = self.model.examples[:min(k, len(self.model.examples))]
         
     def method(self, data):
-        initial_prompts = self.model.provide_initial_prompts(data, examples=self.model.examples)
-        for i, (prompt, images, true_answer) in enumerate(initial_prompts):
+        initial_prompts = self.model.provide_initial_prompts(data,  batch_size=self.batch_size, examples=self.model.examples)
+        for i, (prompt, images, true_answers) in enumerate(initial_prompts):
             print(f"Running batch {i + 1}")
 
             # Generating CoT responses from initial prompts
@@ -78,11 +81,12 @@ class FewShotPipeline(Pipeline):
                 
             # Generating final prompts
             print("Generating final prompts from CoT outputs")
-            final_prompt = self.model.generate_final_prompt(outputs[0])
+            final_prompt = self.model.generate_final_prompts(outputs)
             
             print("Running model for final answers")
             outputs = self.model.run_model(final_prompt, images)
 
             for output in outputs:
                 self.output_file.write(f"<ENTRY START>\n{output}\n\n")
-            self.answer_file.write(f"{true_answer}\n")
+            for answer in true_answers:
+                self.answer_file.write(f"{answer}\n")

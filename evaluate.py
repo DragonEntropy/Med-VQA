@@ -8,7 +8,7 @@ def check_prefix(string, prefix):
 
 def check_hallucination(string, m=10, n=3):
     # Check for 1 character responses
-    prefix = "the answer is "
+    prefix = "so, "
     if check_prefix(string, prefix):
         if len(string) - len(prefix) <= 3:
             return True
@@ -92,7 +92,7 @@ def evaluate(pred_file, true_file, output_file=None, k=0, direct=False):
                 else:
                     dialogue_step = (3, dialogue_step[1])
 
-        elif check_prefix(current_line, "The answer is "):
+        elif check_prefix(current_line, "So, "):
             if dialogue_step[0] == 3:
                 dialogue_step = (4, dialogue_step[1])
                 

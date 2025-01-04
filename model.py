@@ -3,6 +3,7 @@ import torch
 import os
 from PIL import Image
 from abc import ABC, abstractmethod
+from copy import deepcopy
 
 from misc import find_all_substr
 
@@ -30,11 +31,11 @@ The answer is a CT scan\n"""
         yield None
     
     @abstractmethod
-    def generate_final_prompt(self, output):
+    def generate_final_prompts(self, outputs):
         return None
     
     @abstractmethod
-    def run_model(self, prompt, images):
+    def run_model(self, prompts, images):
         return None
 
 
@@ -53,17 +54,11 @@ class LlavaModel(Model):
         ).to(0)
         self.processor = AutoProcessor.from_pretrained(self.model_id)
 
-    def provide_initial_prompts(self, data, examples=[], direct=False, max=-1):
-        # Combine example images with blank final image
-        images = list()
-        for example in examples:
-            image_url = os.path.join(self.image_path, example[1])
-            image = Image.open(image_url)
-            images.append(image)
-        # Last space is reserved for the question image
-        images.append(None)
-        
+    def provide_initial_prompts(self, data, examples=[], batch_size=1, direct=False, max=-1):
         count = 0
+        prompts = list()
+        images = list()
+        true_answers = list()
 
         # Examples is a list of (question, image, response) tuples
         for entry in data:
@@ -118,30 +113,47 @@ class LlavaModel(Model):
 
             # Generate prompt via chat template
             prompt = self.processor.apply_chat_template(conversation, history=[], add_generation_prompt=False)
+            prompts.append(prompt)
 
-            # Insert question image
+            # Combine example images with the question's final image
+            for example in examples:
+                image_url = os.path.join(self.image_path, example[1])
+                image = Image.open(image_url)
+                images.append(image)
+
             image_url = os.path.join(self.image_path, entry["img_name"])
             image = Image.open(image_url)
-            images[-1] = image
-            true_ans = entry["answer"]
-            
+            images.append(image)
+
+            true_answers.append(entry["answer"])
             count += 1
-            yield prompt, images, true_ans
 
-    def generate_final_prompt(self, output):
-        # Instead of generating a new conversation template, alter existing output
-        indices = find_all_substr(output, "USER:")
-        indices.reverse()
-        for i in indices:
-            output = output[:(i + 6)] + "<image>" + output[(i + 6):]
-        output += f"\n{self.answer_prompt}"
+            if count % batch_size == 0:
+                yield prompts, images, true_answers
+                prompts = list()
+                images = list()
+                true_answers = list()
+        
+        # Yield final batch when data is empty
+        if count % batch_size > 0:
+            yield prompts, images, true_answers
 
-        return output
+    def generate_final_prompts(self, outputs):
+        # Instead of generating a new conversation template, alter existing outputs
+        final_prompts = list()
+        for output in outputs:
+            indices = find_all_substr(output, "USER:")
+            indices.reverse()
+            for i in indices:
+                output = output[:(i + 6)] + "<image>" + output[(i + 6):]
+            output += f"\n{self.answer_prompt}"
+            final_prompts.append(output)
+        return final_prompts
     
-    def run_model(self, prompt, images):
+    def run_model(self, prompts, images):
         raw_input = self.processor(
             images=images,
-            text=prompt,
+            text=prompts,
             return_tensors='pt',
             padding=True
         ).to(0, torch.float16)

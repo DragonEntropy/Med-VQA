@@ -14,6 +14,8 @@ def main():
     argparser.add_argument("-z", "--zeroshot", action="store_true")
     argparser.add_argument("-f", "--fewshot", action="store_true")
     argparser.add_argument("-d", "--direct", action="store_true")
+    argparser.add_argument("-k", "--kshot", type=int, default=1)
+    argparser.add_argument("-b", "--batchsize", type=int, default=1)
     args = argparser.parse_args()
 
     model = LlavaModel(args.srcpath, args.imagepath)
@@ -21,13 +23,13 @@ def main():
         pipeline = None
         if args.direct:
             print("Running with direct prompting")
-            pipeline = DirectPipeline(model, output_file, answer_file)
+            pipeline = DirectPipeline(model, output_file, answer_file, batch_size=args.batchsize)
         elif args.zeroshot:
             print("Running with zero-shot prompting")
-            pipeline = ZeroShotPipeline(model, output_file, answer_file)
+            pipeline = ZeroShotPipeline(model, output_file, answer_file, batch_size=args.batchsize)
         elif args.fewshot:
             print("Running with few-shot prompting")
-            pipeline = FewShotPipeline(model, output_file, answer_file, k=1)
+            pipeline = FewShotPipeline(model, output_file, answer_file, batch_size=args.batchsize, k=args.kshot)
         else:
             print("You must specify a type of prompting to use (--direct, --zeroshot, --fewshot, etc)")
             return
