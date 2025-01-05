@@ -23,11 +23,11 @@ class Model(ABC):
 3. The image is black and white, which is a common characteristic of medical images.
 
 Based on these observations, the modality used to take this image is most likely an X-ray or a CT scan.
-The answer is a CT scan\n"""
+So, the answer is a CT scan\n"""
         )]
 
     @abstractmethod
-    def provide_initial_prompts(self, data, examples=[], direct=False, max=-1):
+    def provide_initial_prompts(self, data, examples=[], batch_size=1, direct=False, max=-1):
         yield None
     
     @abstractmethod
@@ -142,11 +142,7 @@ class LlavaModel(Model):
         # Instead of generating a new conversation template, alter existing outputs
         final_prompts = list()
         for output in outputs:
-            indices = find_all_substr(output, "USER:")
-            indices.reverse()
-            for i in indices:
-                output = output[:(i + 6)] + "<image>" + output[(i + 6):]
-            output += f"\n{self.answer_prompt}"
+            output = self.image_injection_method(output)
             final_prompts.append(output)
         return final_prompts
     
@@ -163,3 +159,34 @@ class LlavaModel(Model):
         for raw_output in raw_outputs:
             outputs.append(self.processor.decode(raw_output, skip_special_tokens=True))
         return outputs
+    
+    def image_injection_method(self, prompt):
+        indices = find_all_substr(prompt, "USER:")
+        indices.reverse()
+        for i in indices:
+            output = prompt[:(i + 6)] + "<image>" + prompt[(i + 6):]
+        output += f"\n{self.answer_prompt}"
+        return output
+    
+class LlavaInterleaveModel(LlavaModel):
+    def __init__(self, data_path, image_path):
+        self.model_id = "llava-hf/llava-interleave-qwen-7b-hf"
+        self.answer_prompt = "So, "
+        super().__init__(data_path, image_path)
+
+    def image_injection_method(self, prompt):
+        indices = find_all_substr(prompt, "user")
+        indices.reverse()
+        for j, i in enumerate(indices):
+            if j == len(indices) - 1:
+                prompt = prompt[:i] + "<|im_start|>" + prompt[:(i + 5)] + "<image>" + prompt[(i + 5):]
+            else:
+                prompt = prompt[:i] + "<|im_end|>\n<|im_start|>" + prompt[:(i + 5)] + "<image>\n" + prompt[(i + 5):]
+
+        indices = find_all_substr(prompt, "assistant")
+        indices.reverse()
+        for i in indices:
+            prompt = prompt[:i] + "<|im_end|>\n<|im_start|>" + prompt[i:]
+        prompt +=  f"\n{self.answer_prompt}<|im_end|>"
+
+        return prompt

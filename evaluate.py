@@ -6,7 +6,7 @@ def check_prefix(string, prefix):
         return False
     return string[:len(prefix)] == prefix
 
-def check_hallucination(string, m=10, n=3):
+def check_hallucination(string, m=10, n=4):
     # Check for 1 character responses
     prefix = "so, "
     if check_prefix(string, prefix):
@@ -58,6 +58,7 @@ def evaluate(pred_file, true_file, output_file=None, k=0, direct=False):
     hallucination_count = 0
 
     for current_line in pred_file:
+        current_line = current_line.lower()
         """
         Dialogue steps:
             0: Initially searching for "<ENTRY START>"
@@ -66,12 +67,13 @@ def evaluate(pred_file, true_file, output_file=None, k=0, direct=False):
             3: Searching for final response
             4: Scanning final response
         """
-        if check_prefix(current_line, "<ENTRY START>"):
+        print(current_line)
+        if check_prefix(current_line, "<entry start>"):
             if dialogue_step == (4, k):
-                hits, total = get_score(current_answer.lower(), keywords)
+                hits, total = get_score(current_answer, keywords)
                 correct_list.append(hits)
                 total_list.append(total)
-                if check_hallucination(current_answer.lower()):
+                if check_hallucination(current_answer):
                     hallucination_count += 1
 
             true = true_file.__next__()
@@ -79,25 +81,26 @@ def evaluate(pred_file, true_file, output_file=None, k=0, direct=False):
             current_answer = ""
             dialogue_step = (1, 0)
 
-        elif check_prefix(current_line, "USER:") or check_prefix(current_line, " USER:"):
+        elif check_prefix(current_line, "user") or check_prefix(current_line, " user"):
             if dialogue_step[0] == 1:
                 dialogue_step = (2, dialogue_step[1])
             elif dialogue_step[0] == 4:
                 dialogue_step = (2, dialogue_step[1] + 1)
 
-        elif check_prefix(current_line, " ASSISTANT:"):
+        elif check_prefix(current_line, "assistant") or check_prefix(current_line, " assistant"):
             if dialogue_step[0] == 2:
                 if direct:
                     dialogue_step = (4, dialogue_step[1])
                 else:
                     dialogue_step = (3, dialogue_step[1])
 
-        elif check_prefix(current_line, "So, "):
+        elif check_prefix(current_line, "so, "):
             if dialogue_step[0] == 3:
                 dialogue_step = (4, dialogue_step[1])
                 
         if dialogue_step == (4, k):
             current_answer = "".join((current_answer, current_line))
+        print(dialogue_step)
 
     averages = [hits / total for (hits, total) in zip(correct_list, total_list)]
     micro_average = sum(correct_list) / sum(total_list)

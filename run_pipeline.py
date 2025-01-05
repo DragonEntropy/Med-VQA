@@ -1,8 +1,9 @@
 import os
 import argparse
 
-from model import LlavaModel
+from model import LlavaModel, LlavaInterleaveModel
 from pipeline import DirectPipeline, ZeroShotPipeline, FewShotPipeline
+from qwen_model import QwenModel
 
 def main():
     cwd = os.path.dirname(os.getcwd())
@@ -16,9 +17,24 @@ def main():
     argparser.add_argument("-d", "--direct", action="store_true")
     argparser.add_argument("-k", "--kshot", type=int, default=1)
     argparser.add_argument("-b", "--batchsize", type=int, default=1)
+    argparser.add_argument("-m", "--model", type=str, default="L")
     args = argparser.parse_args()
 
-    model = LlavaModel(args.srcpath, args.imagepath)
+    model = None
+    if args.model == "L":
+        print("Running with Llava model")
+        model = LlavaModel(args.srcpath, args.imagepath)
+    elif args.model == "LI":
+        print("Running with Llava interleave model")
+        model = LlavaInterleaveModel(args.srcpath, args.imagepath)
+    elif args.model == "Q":
+        print("Running with Qwen model")
+        model = QwenModel(args.srcpath, args.imagepath)
+
+    else:
+        print("An invalid model was specified")
+        return
+    
     with open(args.outputpath, 'w') as output_file, open(args.answerpath, 'w') as answer_file:
         pipeline = None
         if args.direct:
