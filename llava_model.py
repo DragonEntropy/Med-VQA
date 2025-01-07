@@ -1,25 +1,26 @@
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import LlavaForConditionalGeneration, AutoProcessor
 import torch
+from PIL import Image
 import os
-from qwen_vl_utils import process_vision_info
 
 from model import Model
+from misc import find_all_substr
 
-class QwenModel(Model):
-    model_id = "Qwen/Qwen2-VL-2B-Instruct"
+
+class LlavaModel(Model):
+    model_id = "llava-hf/llava-1.5-7b-hf"
     CoT_prompt = "Let's think step by step."
     answer_prompt = "So, the answer"
 
     def __init__(self, data_path, image_path):
         super().__init__(data_path, image_path)
 
-        self.base_model = Qwen2VLForConditionalGeneration.from_pretrained(
+        self.base_model = LlavaForConditionalGeneration.from_pretrained(
             self.model_id,
             torch_dtype=torch.float16,
-            device_map="auto",
             low_cpu_mem_usage=True,
             cache_dir=self.cache_dir
-        )
+        ).to(0)
         self.processor = AutoProcessor.from_pretrained(self.model_id)
 
     def provide_initial_prompts(self, data, examples=[], batch_size=1, direct=False, example_image=True, max=-1):
@@ -43,10 +44,11 @@ class QwenModel(Model):
                 conversation.append({
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": f"file://{os.path.join(self.image_path, example[1])}"},
-                        {"type": "text", "text": f"{example[0]}\n"}
+                        {"type": "text", "text":  f"Here is an example of the answer format I want you to follow.\n{example[0]}\n"}
                     ]
                 })
+                if example_image:
+                    conversation[-1]["content"].append({"type": "image"})
                 conversation.append({
                     "role": "assistant",
                     "content": [
@@ -58,13 +60,20 @@ class QwenModel(Model):
             conversation.append({
                 "role": "user",
                 "content": [
-                    {"type": "image", "image": f"file://{os.path.join(self.image_path, entry["img_name"])}"},
-                    {"type": "text", "text":  f"{entry["question"]}\n"}
+                    {"type": "text", "text":  f"Please answer the following question.\n{entry["question"]}\n"},
+                    {"type": "image"}
                 ]
-            })
+            }),
 
             # Skip the chain of thought step if directly questioning
-            if not direct:
+            if direct:
+                conversation.append({
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": ""},
+                    ]
+                })
+            else:
                 conversation.append({
                     "role": "assistant",
                     "content": [
@@ -73,16 +82,19 @@ class QwenModel(Model):
                 })
 
             # Generate prompt via chat template
-            prompt = self.processor.apply_chat_template(conversation, tokenisation=False, history=[], add_generation_prompt=True)
-
-            # Force model to extend existing prompt by removing trailing characters
-            if not direct:
-                prompt = prompt[:-(len("<|im_end|>\n<|im_start|>assistant") + 1)]
-            
-            image_inputs, video_inputs = process_vision_info(conversation)
+            prompt = self.processor.apply_chat_template(conversation, history=[], add_generation_prompt=False)
             prompts.append(prompt)
 
-            images.append(image_inputs)
+            # Combine example images with the question's final image
+            if example_image:
+                for example in examples:
+                    image_url = os.path.join(self.image_path, example[1])
+                    image = Image.open(image_url)
+                    images.append(image)
+
+            image_url = os.path.join(self.image_path, entry["img_name"])
+            image = Image.open(image_url)
+            images.append(image)
 
             true_answers.append(entry["answer"])
             count += 1
@@ -97,16 +109,15 @@ class QwenModel(Model):
         if count % batch_size > 0:
             yield prompts, images, true_answers
 
-    def generate_final_prompts(self, outputs):
+    def generate_final_prompts(self, outputs, example_image=True):
         # Instead of generating a new conversation template, alter existing outputs
         final_prompts = list()
         for output in outputs:
             output = self.image_injection_method(output)
             final_prompts.append(output)
         return final_prompts
-
+    
     def run_model(self, prompts, images):
-        print(images, prompts)
         raw_input = self.processor(
             images=images,
             text=prompts,
@@ -121,21 +132,39 @@ class QwenModel(Model):
         return outputs
     
     def image_injection_method(self, prompt, example_image=True):
-        output = ""
-        entities = ["user", "system", "assistant"]
-        last_entity = None
-        for line in prompt.split("\n"):
-            if line in entities:
-                if last_entity:
-                    output += "<|im_end|>\n"
-                output += f"<|im_start|>{line}\n"
-                last_entity = line
-            elif last_entity == "user":
-                output += f"<|vision_start|><|image_pad|><|vision_end|>{line}\n"
-                last_entity = "expired"
-            else:
-                output += line
+        indices = find_all_substr(prompt, "USER:")
+        indices.reverse()
+        for j, i in enumerate(indices):
+            if example_image or j == 0:
+                output = prompt[:(i + 6)] + "<image>" + prompt[(i + 6):]
         output += f"\n{self.answer_prompt}"
-
-        print(output)
         return output
+    
+class LlavaInterleaveModel(LlavaModel):
+    def __init__(self, data_path, image_path):
+        self.model_id = "llava-hf/llava-interleave-qwen-7b-hf"
+        self.answer_prompt = "So, "
+        super().__init__(data_path, image_path)
+
+    def image_injection_method(self, prompt, example_image=True):
+        indices = find_all_substr(prompt, "user")
+        indices.reverse()
+        for j, i in enumerate(indices):
+            if example_image or j == 0:
+                if j == len(indices) - 1:
+                    prompt = prompt[:i] + "<|im_start|>" + prompt[:(i + 5)] + "<image>" + prompt[(i + 5):]
+                else:
+                    prompt = prompt[:i] + "<|im_end|>\n<|im_start|>" + prompt[:(i + 5)] + "<image>\n" + prompt[(i + 5):]
+            else:
+                if j == len(indices) - 1:
+                    prompt = prompt[:i] + "<|im_start|>" + prompt[i:]
+                else:
+                    prompt = prompt[:i] + "<|im_end|>\n<|im_start|>" + prompt[i:]
+
+        indices = find_all_substr(prompt, "assistant")
+        indices.reverse()
+        for i in indices:
+            prompt = prompt[:i] + "<|im_end|>\n<|im_start|>" + prompt[i:]
+        prompt += f"\n{self.answer_prompt}<|im_end|>"
+
+        return prompt

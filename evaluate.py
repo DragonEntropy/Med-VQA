@@ -26,7 +26,6 @@ def check_hallucination(string, m=10, n=4):
             else:
                 current_substr = substr
                 current_count = 1
-    print(string)
     return False
 
 
@@ -100,7 +99,6 @@ def evaluate(pred_file, true_file, output_file=None, k=0, direct=False):
                 
         if dialogue_step == (4, k):
             current_answer = "".join((current_answer, current_line))
-        print(dialogue_step)
 
     averages = [hits / total for (hits, total) in zip(correct_list, total_list)]
     micro_average = sum(correct_list) / sum(total_list)

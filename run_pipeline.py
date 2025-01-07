@@ -1,9 +1,9 @@
 import os
 import argparse
 
-from model import LlavaModel, LlavaInterleaveModel
-from pipeline import DirectPipeline, ZeroShotPipeline, FewShotPipeline
+from llava_model import LlavaModel, LlavaInterleaveModel
 from qwen_model import QwenModel
+from pipeline import DirectPipeline, ZeroShotPipeline, FewShotPipeline
 
 def main():
     cwd = os.path.dirname(os.getcwd())
@@ -15,9 +15,11 @@ def main():
     argparser.add_argument("-z", "--zeroshot", action="store_true")
     argparser.add_argument("-f", "--fewshot", action="store_true")
     argparser.add_argument("-d", "--direct", action="store_true")
+    argparser.add_argument("-e", "--exampleimage", action="store_false")
     argparser.add_argument("-k", "--kshot", type=int, default=1)
     argparser.add_argument("-b", "--batchsize", type=int, default=1)
     argparser.add_argument("-m", "--model", type=str, default="L")
+    argparser.add_argument("-c", "--count", type=int, default=-1)
     args = argparser.parse_args()
 
     model = None
@@ -39,13 +41,13 @@ def main():
         pipeline = None
         if args.direct:
             print("Running with direct prompting")
-            pipeline = DirectPipeline(model, output_file, answer_file, batch_size=args.batchsize)
+            pipeline = DirectPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize)
         elif args.zeroshot:
             print("Running with zero-shot prompting")
-            pipeline = ZeroShotPipeline(model, output_file, answer_file, batch_size=args.batchsize)
+            pipeline = ZeroShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize)
         elif args.fewshot:
             print("Running with few-shot prompting")
-            pipeline = FewShotPipeline(model, output_file, answer_file, batch_size=args.batchsize, k=args.kshot)
+            pipeline = FewShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, example_image=args.exampleimage, k=args.kshot)
         else:
             print("You must specify a type of prompting to use (--direct, --zeroshot, --fewshot, etc)")
             return
