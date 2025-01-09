@@ -6,7 +6,7 @@ from qwen_vl_utils import process_vision_info
 from model import Model
 
 class QwenModel(Model):
-    model_id = "Qwen/Qwen2-VL-2B-Instruct"
+    model_id = "Qwen/Qwen2-VL-7B-Instruct"
     CoT_prompt = "Let's think step by step."
     answer_prompt = "So, the answer"
 
@@ -21,6 +21,10 @@ class QwenModel(Model):
             cache_dir=self.cache_dir
         )
         self.processor = AutoProcessor.from_pretrained(self.model_id)
+        self.examples = [("Which part of the body does this image belong to?",
+            "xmlab102/source.jpg",
+            "Let's think step by step. The image is a CT scan of the chest. The CT scan shows the lungs, heart, and other structures of the chest. 1. The lungs are visible in the center of the image.2. The heart is located in the center of the chest, slightly to the right.3. The other structures visible in the image are the ribs, spine, and other bones of the chest.Based on these observations, the image belongs to the chest.\nSo, the answer is chest.\n"
+        )]
 
     def provide_initial_prompts(self, data, examples=[], batch_size=1, direct=False, example_image=True, max=-1):
         count = 0
@@ -97,7 +101,7 @@ class QwenModel(Model):
         if count % batch_size > 0:
             yield prompts, images, true_answers
 
-    def generate_final_prompts(self, outputs):
+    def generate_final_prompts(self, outputs, example_image=True):
         # Instead of generating a new conversation template, alter existing outputs
         final_prompts = list()
         for output in outputs:
@@ -106,7 +110,6 @@ class QwenModel(Model):
         return final_prompts
 
     def run_model(self, prompts, images):
-        print(images, prompts)
         raw_input = self.processor(
             images=images,
             text=prompts,
@@ -137,5 +140,4 @@ class QwenModel(Model):
                 output += line
         output += f"\n{self.answer_prompt}"
 
-        print(output)
         return output

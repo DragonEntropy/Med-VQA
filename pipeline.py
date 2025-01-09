@@ -44,12 +44,15 @@ class ZeroShotPipeline(Pipeline):
         
     def method(self, data):
         initial_prompts = self.model.provide_initial_prompts(data, max=self.count, batch_size=self.batch_size)
+        blacklist = [31]
         for i, (prompts, images, true_answers) in enumerate(initial_prompts):
+            for j in range(i * self.batch_size, (i + 1) * self.batch_size):
+                if j in blacklist:
+                    continue
             print(f"Running batch {i + 1}")
 
             # Generating CoT responses from initial prompts
             print('Running model for CoT step')
-            print(prompts[0])
             outputs = self.model.run_model(prompts, images)
                 
             # Creating final prompts
@@ -58,7 +61,6 @@ class ZeroShotPipeline(Pipeline):
 
             # Generating final answers from prompts
             print("Running model for final answers")
-            print(final_prompts[0])
             outputs = self.model.run_model(final_prompts, images)
 
             for output in outputs:
@@ -76,13 +78,17 @@ class FewShotPipeline(Pipeline):
         
     def method(self, data):
         initial_prompts = self.model.provide_initial_prompts(data, max=self.count, batch_size=self.batch_size, example_image=self.include_example_image, examples=self.model.examples)
-        for i, (prompt, images, true_answers) in enumerate(initial_prompts):
+        blacklist = [31]
+        for i, (prompts, images, true_answers) in enumerate(initial_prompts):
+            for j in range(i * self.batch_size, (i + 1) * self.batch_size):
+                if j in blacklist:
+                    continue
             print(f"Running batch {i + 1}")
 
             # Generating CoT responses from initial prompts
             print('Running model for CoT step')
-            print(prompt[0])
-            outputs = self.model.run_model(prompt, images)
+            print(prompts[0])
+            outputs = self.model.run_model(prompts, images)
                 
             # Generating final prompts
             print("Generating final prompts from CoT outputs")
