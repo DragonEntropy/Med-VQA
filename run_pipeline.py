@@ -3,7 +3,8 @@ import argparse
 
 from llava_model import LlavaModel, LlavaInterleaveModel
 from qwen_model import QwenModel
-from pipeline import DirectPipeline, ZeroShotPipeline, FewShotPipeline
+from huatuo_model import HuaTuoModel
+from pipeline import DirectPipeline, ZeroShotPipeline, FewShotPipeline, AutoShotPipeline
 
 def main():
     cwd = os.path.dirname(os.getcwd())
@@ -11,10 +12,11 @@ def main():
     argparser.add_argument("-s", "--srcpath", type=str, default=os.path.join(cwd, "Downloads", "Slake", "test.json"))
     argparser.add_argument("-i", "--imagepath", type=str, default=os.path.join(cwd, "Downloads", "Slake", "imgs"))
     argparser.add_argument("-o", "--outputpath", type=str, default=os.path.join(cwd, "Documents", "alex", "results", "pred.txt"))
-    argparser.add_argument("-a", "--answerpath", type=str, default=os.path.join(cwd, "Documents", "alex", "results", "ans.txt"))
+    argparser.add_argument("-t", "--truepath", type=str, default=os.path.join(cwd, "Documents", "alex", "results", "ans.txt"))
     argparser.add_argument("-z", "--zeroshot", action="store_true")
     argparser.add_argument("-f", "--fewshot", action="store_true")
     argparser.add_argument("-d", "--direct", action="store_true")
+    argparser.add_argument("-a", "--autoshot", action="store_true")
     argparser.add_argument("-e", "--exampleimage", action="store_false")
     argparser.add_argument("-k", "--kshot", type=int, default=1)
     argparser.add_argument("-b", "--batchsize", type=int, default=1)
@@ -32,12 +34,15 @@ def main():
     elif args.model == "Q":
         print("Running with Qwen model")
         model = QwenModel(args.srcpath, args.imagepath)
+    elif args.model == "H":
+        print("Running with Huatuo model")
+        model = HuaTuoModel(args.srcpath, args.imagepath)
 
     else:
         print("An invalid model was specified")
         return
     
-    with open(args.outputpath, 'w') as output_file, open(args.answerpath, 'w') as answer_file:
+    with open(args.outputpath, 'w') as output_file, open(args.truepath, 'w') as answer_file:
         pipeline = None
         if args.direct:
             print("Running with direct prompting")
@@ -48,6 +53,9 @@ def main():
         elif args.fewshot:
             print("Running with few-shot prompting")
             pipeline = FewShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, example_image=args.exampleimage, k=args.kshot)
+        elif args.autoshot:
+            print("Running with auto-shot prompting")
+            pipeline = AutoShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, example_image=args.exampleimage, k=args.kshot)
         else:
             print("You must specify a type of prompting to use (--direct, --zeroshot, --fewshot, etc)")
             return

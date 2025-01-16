@@ -6,10 +6,9 @@ def accumulate_categories(data):
     categories = defaultdict(lambda: 0)
     for entry in data:
         if entry["q_lang"] == "en":
-            categories[entry["answer"].lower()] += 1
+            categories[entry["content_type"].lower()] += 1
     categories = sorted(categories)
     print(categories)
-    print(categories.keys())
     return categories
 
 def main():

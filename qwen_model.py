@@ -43,7 +43,13 @@ class QwenModel(Model):
 
             # Adding examples to conversation
             conversation = list()
-            for example in examples:
+            
+            examples_source = examples
+            if type(examples) == dict:
+                category = entry["content_type"]
+                examples_source = examples[category]
+            
+            for example in examples_source:
                 conversation.append({
                     "role": "user",
                     "content": [

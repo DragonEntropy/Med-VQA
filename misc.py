@@ -7,3 +7,8 @@ def find_all_substr(string, substr):
         if string[i:(i + n)] == substr:
             indices.append(i)
     return indices
+
+def check_prefix(string, prefix):
+    if len(string) < len(prefix):
+        return False
+    return string[:len(prefix)] == prefix
