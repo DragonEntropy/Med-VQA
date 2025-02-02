@@ -31,5 +31,5 @@ So, the answer is a CT scan\n"""
         return None
     
     @abstractmethod
-    def run_model(self, prompts, images):
+    def run_model(self, prompts, images, store_attention=False):
         return None

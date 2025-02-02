@@ -117,7 +117,7 @@ class LlavaModel(Model):
             final_prompts.append(output)
         return final_prompts
     
-    def run_model(self, prompts, images):
+    def run_model(self, prompts, images, store_attention=False):
         raw_input = self.processor(
             images=images,
             text=prompts,

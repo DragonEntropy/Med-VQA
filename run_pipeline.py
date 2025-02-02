@@ -22,6 +22,7 @@ def main():
     argparser.add_argument("-b", "--batchsize", type=int, default=1)
     argparser.add_argument("-m", "--model", type=str, default="L")
     argparser.add_argument("-c", "--count", type=int, default=-1)
+    argparser.add_argument("-at", "--attention", action="store_true")
     args = argparser.parse_args()
 
     model = None
@@ -46,16 +47,16 @@ def main():
         pipeline = None
         if args.direct:
             print("Running with direct prompting")
-            pipeline = DirectPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize)
+            pipeline = DirectPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, attention=args.attention)
         elif args.zeroshot:
             print("Running with zero-shot prompting")
-            pipeline = ZeroShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize)
+            pipeline = ZeroShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, attention=args.attention)
         elif args.fewshot:
             print("Running with few-shot prompting")
-            pipeline = FewShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, example_image=args.exampleimage, k=args.kshot)
+            pipeline = FewShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, attention=args.attention, example_image=args.exampleimage, k=args.kshot)
         elif args.autoshot:
             print("Running with auto-shot prompting")
-            pipeline = AutoShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, example_image=args.exampleimage, k=args.kshot)
+            pipeline = AutoShotPipeline(model, output_file, answer_file, count=args.count, batch_size=args.batchsize, attention=args.attention, example_image=args.exampleimage, k=args.kshot)
         else:
             print("You must specify a type of prompting to use (--direct, --zeroshot, --fewshot, etc)")
             return
