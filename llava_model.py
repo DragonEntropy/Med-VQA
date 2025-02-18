@@ -40,7 +40,13 @@ class LlavaModel(Model):
 
             # Adding examples to conversation
             conversation = list()
-            for example in examples:
+
+            examples_source = examples
+            if type(examples) == dict:
+                category = entry["content_type"]
+                examples_source = examples[category]
+
+            for example in examples_source:
                 conversation.append({
                     "role": "user",
                     "content": [
@@ -87,7 +93,7 @@ class LlavaModel(Model):
 
             # Combine example images with the question's final image
             if example_image:
-                for example in examples:
+                for example in examples_source:
                     image_url = os.path.join(self.image_path, example[1])
                     image = Image.open(image_url)
                     images.append(image)
@@ -136,9 +142,10 @@ class LlavaModel(Model):
         indices.reverse()
         for j, i in enumerate(indices):
             if example_image or j == 0:
-                output = prompt[:(i + 6)] + "<image>" + prompt[(i + 6):]
-        output += f"\n{self.answer_prompt}"
-        return output
+                prompt = prompt[:(i + 6)] + "<image>" + prompt[(i + 6):]
+        prompt += f"\n{self.answer_prompt}"
+        
+        return prompt
     
 class LlavaInterleaveModel(LlavaModel):
     def __init__(self, data_path, image_path):

@@ -59,7 +59,7 @@ def evaluate(pred_file, true_file, k=0, direct=False):
     current_answer = None
     hallucination_count = 0
     question_number = -1
-    blacklist = [31, 125]
+    blacklist = [] # [31, 125]
 
     for current_line in pred_file:
         current_line = current_line.lower()
@@ -132,11 +132,12 @@ def evaluate_by_category(data_file, pred_path, k=0, direct=False):
     categories = ["Abnormality", "Color", "KG", "Modality", "Organ", "Plane", "Position", "Quantity", "Shape", "Size"]
     data_json = json.load(data_file)
 
+    correct_list = list()
+    total_list = list()
+
     for category in categories:
         
         dialogue_step = (0, 0)
-        correct_list = list()
-        total_list = list()
         keywords = None
         current_answer = None
         hallucination_count = 0
@@ -192,14 +193,14 @@ def evaluate_by_category(data_file, pred_path, k=0, direct=False):
                 if dialogue_step == (4, k):
                     current_answer = "".join((current_answer, current_line))
 
-            averages = [hits / total for (hits, total) in zip(correct_list, total_list)]
-            micro_average = sum(correct_list) / sum(total_list)
-            macro_average = sum(averages) / len(total_list)
-            print(f"Printing results for category {category}")
-            print(f"Total score: {sum(correct_list)} / {sum(total_list)}")
-            print(f"Macro average: {(100 * macro_average):.2f}%")
-            print(f"Micro average: {(100 * micro_average):.2f}%")
-            print(f"Hallucination rate: {(100 * hallucination_count / len(total_list)):.2f}%")
+    averages = [hits / total for (hits, total) in zip(correct_list, total_list)]
+    micro_average = sum(correct_list) / sum(total_list)
+    macro_average = sum(averages) / len(total_list)
+    print(f"Printing results for category {category}")
+    print(f"Total score: {sum(correct_list)} / {sum(total_list)}")
+    print(f"Macro average: {(100 * macro_average):.2f}%")
+    print(f"Micro average: {(100 * micro_average):.2f}%")
+    print(f"Hallucination rate: {(100 * hallucination_count / len(total_list)):.2f}%")
 
 
 def main():
@@ -236,4 +237,4 @@ def category_main():
         evaluate_by_category(true_file, pred_path, k=k, direct=direct)
 
 if __name__ == "__main__":
-    category_main()
+    main()

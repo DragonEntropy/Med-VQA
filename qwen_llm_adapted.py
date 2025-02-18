@@ -1,13 +1,23 @@
+# Adapted from Evelyn Doan's code: kdoa8440@uni.sydney.edu.au
+
 import os
 import torch
 import re
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from misc import get_collection_dim, find_all_substr
+
+GLOBAL_COUNT = 0
 
 # Set cache directories
 os.environ["TRANSFORMERS_CACHE"] = "/mnt/HDD3/cache/huggingface"
 os.environ["HF_HOME"] = "/mnt/HDD3/cache/huggingface"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["DISABLE_FLASH_ATTN"] = "1"
+os.environ["FLASH_ATTENTION_FORCE_EAGER"] = "1"
 
 def gpu_allocate():
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -19,14 +29,61 @@ def gpu_allocate():
     return device
 
 def load_model_and_tokenizer(model_name, device):
+    cache_dir = os.path.join(os.getcwd(), "alex", "model_cache")
     """
     Load the model and tokenizer.
     """
-    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", trust_remote_code=True, cache_dir=cache_dir)
     tokenizer.pad_token_id = tokenizer.eos_token_id
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, trust_remote_code=True).to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, trust_remote_code=True, cache_dir=cache_dir, attn_implementation="eager").to(device)
+    print(model.config)
     torch.cuda.empty_cache()
     return model, tokenizer
+
+def plot_heatmap(outputs, target_index, tokens):
+    global GLOBAL_COUNT
+
+    ref = torch.stack(outputs["attentions"][-1]).shape
+    attention = torch.zeros([ref[4] + 1, ref[4]]).to(0)
+    print(attention.shape)
+    for i, at in enumerate(outputs["attentions"]):
+        att = torch.stack(at).to(0).mean(dim=0).mean(dim=0).mean(dim=0)
+        if i == 0:
+            padding_y = torch.zeros([att.shape[0], ref[4] - att.shape[1]]).to(0)
+            padding_x = torch.zeros([ref[4] + 1 - att.shape[0], ref[4]]).to(0)
+            padded_at = torch.cat([torch.cat([att, padding_y], dim=-1), padding_x], dim=-2)
+        else:
+            padding_y = torch.zeros([att.shape[0], ref[4] - att.shape[1]]).to(0)
+            padding_x_left = torch.zeros([att.shape[1] - att.shape[0], ref[4]]).to(0)
+            padding_x_right = torch.zeros([ref[4] + 1 - att.shape[1], ref[4]]).to(0)
+            padded_at = torch.cat([torch.cat([padding_x_left, torch.cat([att, padding_y], dim=-1)], dim=-2), padding_x_right], dim=-2)
+        attention += padded_at
+  
+    attention_matrix = attention.cpu().numpy()
+    plt.figure(figsize=(150, 150))
+    sns.heatmap(attention_matrix, xticklabels=tokens, yticklabels=tokens, cmap="viridis")
+    plt.title("Attention Weights")
+
+    plt.savefig(f"alex/results/test_{GLOBAL_COUNT}.png")
+    GLOBAL_COUNT += 1
+    plt.cla()
+    plt.clf()
+
+    """
+    attention = torch.stack(outputs["attentions"][target_index]).to(torch.float32)
+    
+    attention_matrix = attention.mean(dim=0).mean(dim=0).mean(dim=0).cpu().numpy()
+    # print(attention_matrix.shape)
+
+    plt.figure(figsize=(150, 150))
+    sns.heatmap(attention_matrix.transpose(), xticklabels=[0], yticklabels=tokens, cmap="viridis")
+    plt.title("Attention Weights")
+
+    plt.savefig(f"alex/results/test_{GLOBAL_COUNT}.png")
+    GLOBAL_COUNT += 1
+    plt.cla()
+    plt.clf()
+    """
 
 def load_data():
     # Load dataset
@@ -35,16 +92,13 @@ def load_data():
             dataset["validation"]]
     return data
 
-# Load the Qwen model and tokenizer
-def load_model(model_name="Qwen/Qwen2.5-7B-Instruct"):
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype="auto",  # Automatically set dtype based on the device
-        device_map="auto",    # Automatically map model to available GPUs
-        attn_implementation="eager"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    return model, tokenizer
+def find_answer_index(token_list):
+    token_list.reverse()
+    for i, token in enumerate(token_list):
+        if token.isnumeric():
+            token_list.reverse()
+            return -(i + 1)
+    return None
 
 def generate_stage1_prompts(batch, tokenizer):
     """
@@ -110,6 +164,7 @@ def generate_stage1_prompts(batch, tokenizer):
             "answer": "1"
         }
     ]
+    few_shot_examples = []
 
     # Prepare the few-shot examples section
     few_shot_examples_text = ""
@@ -182,11 +237,11 @@ def generate_stage2_prompts(rationales, batch, tokenizer):
 # Perform inference with the model
 def model_inference(model, tokenizer, prompts, device, max_new_tokens=100, store_attention=False):
     inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=1024).to(device)
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
 
     # Ensure inputs contain valid key-value pairs for model.generate
     outputs = model.generate(
-        input_ids=inputs['input_ids'],  # Pass input_ids explicitly
-        attention_mask=inputs['attention_mask'],  # Pass attention_mask explicitly
+        **inputs,  # Pass input_ids explicitly
         do_sample=True,
         max_new_tokens=max_new_tokens,
         temperature=0.1,
@@ -198,20 +253,33 @@ def model_inference(model, tokenizer, prompts, device, max_new_tokens=100, store
         return_dict_in_generate=True
     )
     torch.cuda.empty_cache()
+    
+    global GLOBAL_COUNT
 
     if store_attention:
-        print(len(outputs["attentions"]))
+        get_collection_dim(outputs["sequences"])
+        for i, output in enumerate(outputs["sequences"]):
+            tokens = tokenizer.convert_ids_to_tokens(output)
+            index = find_answer_index(tokens)
+            print(index, tokens[-10:])
+            if -index > len(outputs["attentions"]):
+                GLOBAL_COUNT += 1
+                continue
+            
+            plot_heatmap(outputs, index, tokens)
+
 
     return [tokenizer.decode(output, skip_special_tokens=True) for output in outputs["sequences"]]
 
 
 # Extract numeric answers from the response
 def extract_answer(response):
+    print(response)
     # pattern = r"Therefore, the final answer for the question in singular number \(0, 1, 2, or 3\) is:\s*(\d)"
     pattern = r"(\d)"
     match = re.findall(pattern, response)
     if match:
-        print(match)
+        # print(match)
         return int(match[-1])
     return -1
 
@@ -224,20 +292,22 @@ def few_shot_pipeline(model, tokenizer, data, device, batch_size=10):
     total_batches = (len(data) + batch_size - 1) // batch_size
     # total_batches = 3
     for batch_idx in range(total_batches):
-        print(f"Processing batch {batch_idx + 1}/{total_batches}...")
+        if batch_idx >= 10:
+            continue
+        # print(f"Processing batch {batch_idx + 1}/{total_batches}...")
         torch.cuda.empty_cache()
 
         batch = data[batch_idx * batch_size: (batch_idx + 1) * batch_size]
 
         stage1_prompts, questions, choices, correct_answers = generate_stage1_prompts(batch, tokenizer)
-        rationales = model_inference(model, tokenizer, stage1_prompts, device, max_new_tokens=512)
+        rationales = model_inference(model, tokenizer, stage1_prompts, device, max_new_tokens=512, store_attention=True)
 
         # Clear memory after stage 1
         del stage1_prompts
         torch.cuda.empty_cache()
 
         stage2_prompts = generate_stage2_prompts(rationales, batch, tokenizer)
-        final_answers = model_inference(model, tokenizer, stage2_prompts, device, max_new_tokens=5, store_attention=True)
+        final_answers = model_inference(model, tokenizer, stage2_prompts, device, max_new_tokens=10, store_attention=True)
 
         # Clear memory after stage 2
         del stage2_prompts, rationales
@@ -260,10 +330,13 @@ def few_shot_pipeline(model, tokenizer, data, device, batch_size=10):
             })
 
             # Log responses
+            """
             print(f"Question: {questions[i]}")
             print(f"Model Response: {response}")
             print(f"Predicted Answer: {predicted_answer}, Correct Answer: {correct_answers[i]}")
             print("-" * 50)
+            """
+            
 
     overall_accuracy = (total_correct / total_processed) * 100
     print(f"Overall Accuracy: {overall_accuracy:.2f}%")
@@ -272,8 +345,10 @@ def few_shot_pipeline(model, tokenizer, data, device, batch_size=10):
 def main():
     data = load_data()
     device = gpu_allocate()
-    model, tokenizer = load_model_and_tokenizer("Qwen/Qwen2.5-7B-Instruct", device)
-    result, accuracy = few_shot_pipeline(model, tokenizer, data, device, 10)
+    model_name = "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+    model_name = "Qwen/Qwen2.5-7B-Instruct"
+    model, tokenizer = load_model_and_tokenizer(model_name, device)
+    result, accuracy = few_shot_pipeline(model, tokenizer, data, device, 1)
 
 if __name__ == "__main__":
     main()

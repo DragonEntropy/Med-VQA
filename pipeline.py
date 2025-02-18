@@ -77,12 +77,13 @@ class FewShotPipeline(Pipeline):
     def __init__(self, model, output_file, answer_file, count=-1, batch_size=1, attention=False, example_image=True, k=1):
         super().__init__(model, output_file, answer_file, count, batch_size, attention)
         self.k = k
-        self.model.examples = self.model.examples[:min(k, len(self.model.examples))]
+        if type(self.model.examples) == list:
+            self.model.examples = self.model.examples[:min(k, len(self.model.examples))]
         self.include_example_image = example_image
         
     def method(self, data):
         initial_prompts = self.model.provide_initial_prompts(data, max=self.count, batch_size=self.batch_size, example_image=self.include_example_image, examples=self.model.examples)
-        blacklist = [0] #[31, 125]
+        blacklist = [] #[31, 125]
         for i, (prompts, images, true_answers) in enumerate(initial_prompts):
             skip = False
             for j in range(i * self.batch_size, (i + 1) * self.batch_size):
@@ -266,3 +267,6 @@ class AutoShotPipeline(FewShotPipeline):
                 "Let's think step by step. 1. The image is a cross-sectional view of the abdomen, likely from a CT scan.2. The liver is typically located on the right side of the image, while the kidneys are on either side of the spine.3. The right kidney is usually larger than the left kidney due to the position of the liver.Given these points, the right kidney is smaller than the liver in this image.\nSo, the answer is: right kidney."
             )]
         }
+
+        for key in self.model.examples.keys():
+            self.model.examples[key] = self.model.examples[key][:min(k, len(self.model.examples[key]))]
